@@ -62,7 +62,7 @@ public class MainActivity extends AppCompatActivity {
                     for(int i = 0; i < list.size(); i++) {
                         android.os.Message msg = android.os.Message.obtain();
                         WithMillis<Message> temp = list.get(i);
-                        msg.obj = new WithMillis<Message>(temp.value.copy(CipherUtil.encrypt(temp.value.plainText)), temp.elapsedMillis);
+                        msg.obj = new WithMillis<Message>(temp.value.copy(CipherUtil.encrypt(temp.value.plainText)), System.currentTimeMillis());
                         msg.setTarget(handler);
                         msg.sendToTarget();
                     }
@@ -102,7 +102,7 @@ public class MainActivity extends AppCompatActivity {
 
     public void onPushBtnClick(View view) {
         Message message = Message.generate();
-        insert(new WithMillis<>(message, System.currentTimeMillis()));
+        insert(new WithMillis<>(message));
     }
 
     @UiThread
