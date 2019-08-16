@@ -26,7 +26,9 @@ public class MainActivity extends AppCompatActivity {
 
     private MessageAdapter mAdapter = new MessageAdapter(mList);
 
+    private Thread thread;
     private Handler handler;
+    private boolean isRunning = true;
 
     private Queue<WithMillis<Message>> queue;
 
@@ -49,25 +51,24 @@ public class MainActivity extends AppCompatActivity {
             }
         };
 
-        new Thread(new Runnable() {
+        thread = new Thread(new Runnable() {
             @Override
             public void run() {
-                while(true) {
+                while(isRunning) {
                     List<WithMillis<Message>> list;
-                    synchronized (this) {
+                    synchronized (queue) {
                         list = new ArrayList<>(queue);
                         queue.clear();
                     }
                     for(int i = 0; i < list.size(); i++) {
                         android.os.Message msg = android.os.Message.obtain();
                         WithMillis<Message> temp = list.get(i);
-                        WithMillis<Message> withMillis = new WithMillis<Message>(temp.value.copy(CipherUtil.encrypt(temp.value.plainText)), temp.elapsedMillis);
-                        msg.obj = withMillis;
+                        msg.obj = new WithMillis<Message>(temp.value.copy(CipherUtil.encrypt(temp.value.plainText)), temp.elapsedMillis);
                         msg.setTarget(handler);
                         msg.sendToTarget();
                     }
                     synchronized (queue) {
-                        while (queue.isEmpty()) {
+                        if(queue.isEmpty()) {
                             try {
                                 queue.wait();
                             } catch (InterruptedException e) {
@@ -77,8 +78,18 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }
             }
-        }).start();
+        });
+        thread.start();
         //showWelcomeDialog();
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        isRunning = false;
+        synchronized (queue) {
+            queue.notifyAll();
+        }
     }
 
     private void showWelcomeDialog() {
@@ -135,5 +146,4 @@ public class MainActivity extends AppCompatActivity {
 
         throw new IllegalStateException();
     }
-
 }
