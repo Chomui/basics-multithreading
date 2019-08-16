@@ -26,7 +26,6 @@ public class MainActivity extends AppCompatActivity {
 
     private MessageAdapter mAdapter = new MessageAdapter(mList);
 
-    private Thread thread;
     private Handler handler;
     private boolean isRunning = true;
 
@@ -51,7 +50,7 @@ public class MainActivity extends AppCompatActivity {
             }
         };
 
-        thread = new Thread(new Runnable() {
+        new Thread(new Runnable() {
             @Override
             public void run() {
                 while(isRunning) {
@@ -78,8 +77,7 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }
             }
-        });
-        thread.start();
+        }).start();
         //showWelcomeDialog();
     }
 
