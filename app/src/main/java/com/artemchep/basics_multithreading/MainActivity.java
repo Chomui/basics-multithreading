@@ -15,9 +15,10 @@ import com.artemchep.basics_multithreading.domain.Message;
 import com.artemchep.basics_multithreading.domain.WithMillis;
 
 import java.util.ArrayList;
+import java.util.LinkedList;
 import java.util.List;
+import java.util.Queue;
 
-import static com.artemchep.basics_multithreading.cipher.CipherUtil.WORK_MILLIS;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -26,6 +27,8 @@ public class MainActivity extends AppCompatActivity {
     private MessageAdapter mAdapter = new MessageAdapter(mList);
 
     private Handler handler;
+
+    private Queue<WithMillis<Message>> queue;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -36,14 +39,45 @@ public class MainActivity extends AppCompatActivity {
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
         recyclerView.setAdapter(mAdapter);
 
+        queue = new LinkedList<>();
+
         handler = new Handler() {
             @Override
             public void handleMessage(android.os.Message msg) {
                 WithMillis<Message> withMillis = (WithMillis<Message>) msg.obj;
-                Message message = new Message(withMillis.value.key, withMillis.value.plainText, withMillis.value.cipherText);
-                update(new WithMillis<Message>(message, WORK_MILLIS + (System.currentTimeMillis() - withMillis.elapsedMillis)));
+                update(new WithMillis<Message>(withMillis.value.copy(withMillis.value.cipherText), (System.currentTimeMillis() - withMillis.elapsedMillis)));
             }
         };
+
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                while(true) {
+                    List<WithMillis<Message>> list;
+                    synchronized (this) {
+                        list = new ArrayList<>(queue);
+                        queue.clear();
+                    }
+                    for(int i = 0; i < list.size(); i++) {
+                        android.os.Message msg = android.os.Message.obtain();
+                        WithMillis<Message> temp = list.get(i);
+                        WithMillis<Message> withMillis = new WithMillis<Message>(temp.value.copy(CipherUtil.encrypt(temp.value.plainText)), temp.elapsedMillis);
+                        msg.obj = withMillis;
+                        msg.setTarget(handler);
+                        msg.sendToTarget();
+                    }
+                    synchronized (queue) {
+                        while (queue.isEmpty()) {
+                            try {
+                                queue.wait();
+                            } catch (InterruptedException e) {
+                                e.printStackTrace();
+                            }
+                        }
+                    }
+                }
+            }
+        }).start();
         //showWelcomeDialog();
     }
 
@@ -59,7 +93,7 @@ public class MainActivity extends AppCompatActivity {
 
     public void onPushBtnClick(View view) {
         Message message = Message.generate();
-        insert(new WithMillis<>(message));
+        insert(new WithMillis<>(message, System.currentTimeMillis()));
     }
 
     @UiThread
@@ -67,20 +101,13 @@ public class MainActivity extends AppCompatActivity {
         mList.add(message);
         mAdapter.notifyItemInserted(mList.size() - 1);
 
-        synchronized(this) {
-            new Thread(new Runnable() {
-                @Override
-                public void run() {
-                    android.os.Message msg = android.os.Message.obtain();
-                    Message tempMessage = new Message(message.value.key, message.value.plainText, CipherUtil.encrypt(message.value.plainText));
-                    WithMillis<Message> withMillis = new WithMillis<Message>(tempMessage, System.currentTimeMillis());
-                    msg.obj = withMillis;
-                    msg.setTarget(handler);
-                    msg.sendToTarget();
-                }
-            }).start();
+        synchronized (queue) {
+            queue.add(message);
+            queue.notifyAll();
         }
+
         update(message);
+
         // TODO: Start processing the message (please use CipherUtil#encrypt(...)) here.
         //       After it has been processed, send it to the #update(...) method.
 

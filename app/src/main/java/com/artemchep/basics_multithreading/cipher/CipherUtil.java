@@ -2,7 +2,7 @@ package com.artemchep.basics_multithreading.cipher;
 
 public class CipherUtil {
 
-    public static long WORK_MILLIS = 2000L;
+    public static long WORK_MILLIS = 500L;
 
     public static String encrypt(String plainText) {
         // Simulates the real struggle of encryption.
