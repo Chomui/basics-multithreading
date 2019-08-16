@@ -1,6 +1,7 @@
 package com.artemchep.basics_multithreading;
 
 import android.os.Bundle;
+import android.os.Handler;
 import android.view.View;
 
 import androidx.annotation.UiThread;
@@ -16,11 +17,15 @@ import com.artemchep.basics_multithreading.domain.WithMillis;
 import java.util.ArrayList;
 import java.util.List;
 
+import static com.artemchep.basics_multithreading.cipher.CipherUtil.WORK_MILLIS;
+
 public class MainActivity extends AppCompatActivity {
 
     private List<WithMillis<Message>> mList = new ArrayList<>();
 
     private MessageAdapter mAdapter = new MessageAdapter(mList);
+
+    private Handler handler;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -31,7 +36,15 @@ public class MainActivity extends AppCompatActivity {
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
         recyclerView.setAdapter(mAdapter);
 
-        showWelcomeDialog();
+        handler = new Handler() {
+            @Override
+            public void handleMessage(android.os.Message msg) {
+                WithMillis<Message> withMillis = (WithMillis<Message>) msg.obj;
+                Message message = new Message(withMillis.value.key, withMillis.value.plainText, withMillis.value.cipherText);
+                update(new WithMillis<Message>(message, WORK_MILLIS + (System.currentTimeMillis() - withMillis.elapsedMillis)));
+            }
+        };
+        //showWelcomeDialog();
     }
 
     private void showWelcomeDialog() {
@@ -54,19 +67,33 @@ public class MainActivity extends AppCompatActivity {
         mList.add(message);
         mAdapter.notifyItemInserted(mList.size() - 1);
 
+        synchronized(this) {
+            new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    android.os.Message msg = android.os.Message.obtain();
+                    Message tempMessage = new Message(message.value.key, message.value.plainText, CipherUtil.encrypt(message.value.plainText));
+                    WithMillis<Message> withMillis = new WithMillis<Message>(tempMessage, System.currentTimeMillis());
+                    msg.obj = withMillis;
+                    msg.setTarget(handler);
+                    msg.sendToTarget();
+                }
+            }).start();
+        }
+        update(message);
         // TODO: Start processing the message (please use CipherUtil#encrypt(...)) here.
         //       After it has been processed, send it to the #update(...) method.
 
         // How it should look for the end user? Uncomment if you want to see. Please note that
         // you should not use poor decor view to send messages to UI thread.
-//        getWindow().getDecorView().postDelayed(new Runnable() {
-//            @Override
-//            public void run() {
-//                final Message messageNew = message.value.copy("sample :)");
-//                final WithMillis<Message> messageNewWithMillis = new WithMillis<>(messageNew, CipherUtil.WORK_MILLIS);
-//                update(messageNewWithMillis);
-//            }
-//        }, CipherUtil.WORK_MILLIS);
+        /*getWindow().getDecorView().postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                final Message messageNew = message.value.copy("sample :)");
+                final WithMillis<Message> messageNewWithMillis = new WithMillis<>(messageNew, CipherUtil.WORK_MILLIS);
+                update(messageNewWithMillis);
+            }
+        }, CipherUtil.WORK_MILLIS);*/
     }
 
     @UiThread
