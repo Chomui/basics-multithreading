@@ -7,7 +7,7 @@ public class CipherUtil {
     public static String encrypt(String plainText) {
         // Simulates the real struggle of encryption.
         try {
-            Thread.sleep(WORK_MILLIS);
+            Thread.sleep(WORK_MILLIS * (int) (Math.random() * 6));
         } catch (InterruptedException ignored) {
         }
 
