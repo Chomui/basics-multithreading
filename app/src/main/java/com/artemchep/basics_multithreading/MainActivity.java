@@ -18,6 +18,10 @@ import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Queue;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 
 public class MainActivity extends AppCompatActivity {
@@ -26,10 +30,9 @@ public class MainActivity extends AppCompatActivity {
 
     private MessageAdapter mAdapter = new MessageAdapter(mList);
 
-    private Handler handler;
-    private boolean isRunning = true;
-
-    private Queue<WithMillis<Message>> queue;
+    private CipherHandler handler;
+    private ExecutorService executorService = Executors.newFixedThreadPool(5);
+    private SimpleThread thread;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -40,69 +43,21 @@ public class MainActivity extends AppCompatActivity {
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
         recyclerView.setAdapter(mAdapter);
 
-        queue = new LinkedList<>();
-
-        handler = new Handler() {
-            @Override
-            public void handleMessage(android.os.Message msg) {
-                WithMillis<Message> withMillis = (WithMillis<Message>) msg.obj;
-                update(new WithMillis<Message>(withMillis.value.copy(withMillis.value.cipherText), (System.currentTimeMillis() - withMillis.elapsedMillis)));
-            }
-        };
-
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                while(isRunning) {
-                    List<WithMillis<Message>> list;
-                    synchronized (queue) {
-                        list = new ArrayList<>(queue);
-                        queue.clear();
-                    }
-                    for(int i = 0; i < list.size(); i++) {
-                        android.os.Message msg = android.os.Message.obtain();
-                        WithMillis<Message> temp = list.get(i);
-                        msg.obj = new WithMillis<Message>(temp.value.copy(CipherUtil.encrypt(temp.value.plainText)), System.currentTimeMillis());
-                        msg.setTarget(handler);
-                        msg.sendToTarget();
-                    }
-                    synchronized (queue) {
-                        if(queue.isEmpty()) {
-                            try {
-                                queue.wait();
-                            } catch (InterruptedException e) {
-                                e.printStackTrace();
-                            }
-                        }
-                    }
-                }
-            }
-        }).start();
-        //showWelcomeDialog();
+        handler = new CipherHandler();
+        thread = new SimpleThread(handler);
+        thread.start();
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        isRunning = false;
-        synchronized (queue) {
-            queue.notifyAll();
-        }
-    }
-
-    private void showWelcomeDialog() {
-        new AlertDialog.Builder(this)
-                .setMessage("What are you going to need for this task: Thread, Handler.\n" +
-                        "\n" +
-                        "1. The main thread should never be blocked.\n" +
-                        "2. Messages should be processed sequentially.\n" +
-                        "3. The elapsed time SHOULD include the time message spent in the queue.")
-                .show();
+        executorService.shutdown();
+        thread.finish();
     }
 
     public void onPushBtnClick(View view) {
         Message message = Message.generate();
-        insert(new WithMillis<>(message));
+        insert(new WithMillis<>(message, System.currentTimeMillis()));
     }
 
     @UiThread
@@ -110,26 +65,23 @@ public class MainActivity extends AppCompatActivity {
         mList.add(message);
         mAdapter.notifyItemInserted(mList.size() - 1);
 
-        synchronized (queue) {
-            queue.add(message);
-            queue.notifyAll();
-        }
+        Future<WithMillis<Message>> future = executorService.submit(new Callable<WithMillis<Message>>() {
+            @Override
+            public WithMillis<Message> call() throws Exception {
+                return new WithMillis<Message>(message.value.copy(CipherUtil.encrypt(message.value.plainText)), System.currentTimeMillis() - message.elapsedMillis);
+            }
+        });
+
+        thread.add(future);
 
         update(message);
+    }
 
-        // TODO: Start processing the message (please use CipherUtil#encrypt(...)) here.
-        //       After it has been processed, send it to the #update(...) method.
-
-        // How it should look for the end user? Uncomment if you want to see. Please note that
-        // you should not use poor decor view to send messages to UI thread.
-        /*getWindow().getDecorView().postDelayed(new Runnable() {
-            @Override
-            public void run() {
-                final Message messageNew = message.value.copy("sample :)");
-                final WithMillis<Message> messageNewWithMillis = new WithMillis<>(messageNew, CipherUtil.WORK_MILLIS);
-                update(messageNewWithMillis);
-            }
-        }, CipherUtil.WORK_MILLIS);*/
+    class CipherHandler extends Handler {
+        @Override
+        public void handleMessage(android.os.Message msg) {
+            update((WithMillis<Message>) msg.obj);
+        }
     }
 
     @UiThread
