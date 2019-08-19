@@ -12,12 +12,17 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.artemchep.basics_multithreading.cipher.CipherUtil;
 import com.artemchep.basics_multithreading.domain.Message;
+import com.artemchep.basics_multithreading.domain.SimpleThread;
 import com.artemchep.basics_multithreading.domain.WithMillis;
 
 import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Queue;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 
 
 public class MainActivity extends AppCompatActivity {
@@ -26,10 +31,9 @@ public class MainActivity extends AppCompatActivity {
 
     private MessageAdapter mAdapter = new MessageAdapter(mList);
 
-    private Handler handler;
-    private boolean isRunning = true;
+    private CipherHandler handler;
 
-    private Queue<WithMillis<Message>> queue;
+    private SimpleThread thread;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -40,54 +44,15 @@ public class MainActivity extends AppCompatActivity {
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
         recyclerView.setAdapter(mAdapter);
 
-        queue = new LinkedList<>();
-
-        handler = new Handler() {
-            @Override
-            public void handleMessage(android.os.Message msg) {
-                WithMillis<Message> withMillis = (WithMillis<Message>) msg.obj;
-                update(new WithMillis<Message>(withMillis.value.copy(withMillis.value.cipherText), (System.currentTimeMillis() - withMillis.elapsedMillis)));
-            }
-        };
-
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                while(isRunning) {
-                    List<WithMillis<Message>> list;
-                    synchronized (queue) {
-                        list = new ArrayList<>(queue);
-                        queue.clear();
-                    }
-                    for(int i = 0; i < list.size(); i++) {
-                        android.os.Message msg = android.os.Message.obtain();
-                        WithMillis<Message> temp = list.get(i);
-                        msg.obj = new WithMillis<Message>(temp.value.copy(CipherUtil.encrypt(temp.value.plainText)), System.currentTimeMillis());
-                        msg.setTarget(handler);
-                        msg.sendToTarget();
-                    }
-                    synchronized (queue) {
-                        if(queue.isEmpty()) {
-                            try {
-                                queue.wait();
-                            } catch (InterruptedException e) {
-                                e.printStackTrace();
-                            }
-                        }
-                    }
-                }
-            }
-        }).start();
+        handler = new CipherHandler();
+        thread = new SimpleThread(handler);
         //showWelcomeDialog();
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        isRunning = false;
-        synchronized (queue) {
-            queue.notifyAll();
-        }
+        thread.finish();
     }
 
     private void showWelcomeDialog() {
@@ -110,10 +75,7 @@ public class MainActivity extends AppCompatActivity {
         mList.add(message);
         mAdapter.notifyItemInserted(mList.size() - 1);
 
-        synchronized (queue) {
-            queue.add(message);
-            queue.notifyAll();
-        }
+        thread.add(message);
 
         update(message);
 
@@ -143,5 +105,13 @@ public class MainActivity extends AppCompatActivity {
         }
 
         throw new IllegalStateException();
+    }
+
+    class CipherHandler extends Handler {
+        @Override
+        public void handleMessage(android.os.Message msg) {
+            WithMillis<Message> withMillis = (WithMillis<Message>) msg.obj;
+            update(new WithMillis<Message>(withMillis.value.copy(withMillis.value.cipherText), (System.currentTimeMillis() - withMillis.elapsedMillis)));
+        }
     }
 }
