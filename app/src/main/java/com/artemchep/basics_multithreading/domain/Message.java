@@ -8,9 +8,6 @@ import androidx.annotation.Nullable;
 // Do not modify this file
 public class Message {
 
-    public final Integer id = count++;
-    private static int count = 0;
-
     @NonNull
     public final String key;
 
